@@ -40,3 +40,4 @@ The default username and password is  **admin**
 ![Permissions](https://github.com/tngoman/Store-POS/blob/master/screenshots/permissions.jpg)
 
 ![Users](https://github.com/tngoman/Store-POS/blob/master/screenshots/users.jpg)
+# store

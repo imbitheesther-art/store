@@ -1,2 +1,6 @@
 /node_modules
 undefined
+.npm-cache/
+temp/
+nul
+package-lock.json
