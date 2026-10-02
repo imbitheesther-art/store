@@ -2,9 +2,45 @@ let express = require("express"),
   http = require("http"),
   app = require("express")(),
   server = http.createServer(app),
-  bodyParser = require("body-parser");
+  bodyParser = require("body-parser"),
+  fs = require("fs"),
+  os = require("os"),
+  nodePath = require("path");
+
+// ---------------------------------------------------------------------------
+// nedb@1.8 calls util.isDate() / util.isRegExp(), which Node removed in v22+.
+// Without this shim every database write throws "util.isDate is not a function"
+// when the server is run on a modern Node runtime.
+// ---------------------------------------------------------------------------
+const util = require("util");
+
+if (typeof util.isDate !== "function") {
+  util.isDate = function (value) {
+    return Object.prototype.toString.call(value) === "[object Date]";
+  };
+}
+
+if (typeof util.isRegExp !== "function") {
+  util.isRegExp = function (value) {
+    return Object.prototype.toString.call(value) === "[object RegExp]";
+  };
+}
 
 const PORT = process.env.PORT || 8001;
+
+// On a freshly installed machine these folders do not exist yet, and multer
+// will not create its destination directory on its own.
+const APP_DATA_DIR = nodePath.join(process.env.APPDATA || os.homedir(), "POS");
+
+["uploads", nodePath.join("server", "databases")].forEach(function (folder) {
+  const target = nodePath.join(APP_DATA_DIR, folder);
+
+  try {
+    fs.mkdirSync(target, { recursive: true });
+  } catch (err) {
+    console.error(`Could not create ${target}: ${err.message}`);
+  }
+});
 
 console.log("Server started");
 app.use(bodyParser.json());

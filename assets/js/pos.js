@@ -29,15 +29,27 @@ let moment = require('moment');
 let Swal = require('sweetalert2');
 let { ipcRenderer } = require('electron');
 let dotInterval = setInterval(function () { $(".dot").text('.') }, 3000);
-let Store = require('electron-store');
-const remote = require('electron').remote;
-const app = remote.app;
-let img_path = app.getPath('appData') + '/POS/uploads/';
+// Persistent settings store.
+//
+// electron-store@5 used to live here, but it cannot run in a renderer on
+// Electron >= 14 (it needs the removed `remote` module) and threw while this
+// file was being parsed, which stopped the entire POS UI from starting. The
+// main process now owns the same config.json and this is just a thin wrapper.
+let storage = {
+    get: function (key) { return ipcRenderer.sendSync('storage-get', key); },
+    set: function (key, value) { return ipcRenderer.sendSync('storage-set', key, value); },
+    delete: function (key) { return ipcRenderer.sendSync('storage-delete', key); }
+};
+// Electron >= 14 removed the `remote` module, so the appData path is requested
+// from the main process over IPC instead.
+let appDataPath = ipcRenderer.sendSync('app-data-path');
+let img_path = appDataPath + '/POS/uploads/';
 let api = 'http://' + host + ':' + port + '/api/';
 let btoa = require('btoa');
 let jsPDF = require('jspdf');
 let html2canvas = require('html2canvas');
 let JsBarcode = require('jsbarcode');
+let ReceiptBuilder = require('./receipt.js');
 let macaddress = require('macaddress');
 let categories = [];
 let holdOrderList = [];
@@ -49,8 +61,12 @@ let auth_error = 'Incorrect username or password';
 let auth_empty = 'Please enter a username and password';
 let holdOrderlocation = $("#randerHoldOrders");
 let customerOrderLocation = $("#randerCustomerOrders");
-let storage = new Store();
 let settings;
+
+// Kenya defaults - mirrored from api/settings.js so the UI never renders a
+// blank currency symbol even if the API is slow or unreachable.
+const DEFAULT_CURRENCY = "KSh ";
+const DEFAULT_VAT_PERCENTAGE = "16";
 let platform;
 let user = {};
 let start = moment().startOf('month');
@@ -144,6 +160,16 @@ if (auth == undefined) {
 
     $.get(api + 'settings/get', function (data) {
         settings = data.settings;
+
+        if (settings) {
+            if (!settings.symbol) {
+                settings.symbol = DEFAULT_CURRENCY;
+            }
+
+            if (!settings.percentage) {
+                settings.percentage = DEFAULT_VAT_PERCENTAGE;
+            }
+        }
     });
 
 
@@ -628,6 +654,44 @@ if (auth == undefined) {
         }
 
 
+        // Prints straight to the default receipt printer without the Windows
+        // print dialog. If that fails (no printer, driver error) we offer the
+        // normal dialog so the cashier can still get a receipt out.
+        function printReceipt(html) {
+
+            let result;
+
+            try {
+                result = ipcRenderer.sendSync('print-receipt', html);
+            } catch (err) {
+                result = { ok: false, error: err.message };
+            }
+
+            if (result && result.ok) {
+                return true;
+            }
+
+            Swal.fire({
+                title: 'Could Not Print',
+                text: (result && result.error)
+                    ? result.error
+                    : 'The receipt printer did not respond.',
+                icon: 'warning',
+                confirmButtonText: 'Open Print Dialog',
+                showCancelButton: true,
+                cancelButtonText: 'Skip'
+            }).then((choice) => {
+
+                if (choice.value) {
+                    printJS({ printable: html, type: 'raw-html' });
+                }
+
+            });
+
+            return false;
+        }
+
+
         $.fn.submitDueOrder = function (status) {
 
             let items = "";
@@ -718,79 +782,42 @@ if (auth == undefined) {
                 method = 'PUT'
             }
             else {
-                orderNumber = Math.floor(Date.now() / 1000);
+                // Millisecond precision. With second precision two sales in the
+                // same second got the same _id, and the unique _id index made
+                // the second insert fail, so the sale was thrown away.
+                orderNumber = Date.now();
                 method = 'POST'
             }
 
 
-            receipt = `<div style="font-size: 10px;">                            
-        <p style="text-align: center;">
-        ${settings.img == "" ? settings.img : '<img style="max-width: 50px;max-width: 100px;" src ="' + img_path + settings.img + '" /><br>'}
-            <span style="font-size: 22px;">${settings.store}</span> <br>
-            ${settings.address_one} <br>
-            ${settings.address_two} <br>
-            ${settings.contact != '' ? 'Tel: ' + settings.contact + '<br>' : ''} 
-            ${settings.tax != '' ? 'Vat No: ' + settings.tax + '<br>' : ''} 
-        </p>
-        <hr>
-        <left>
-            <p>
-            Order No : ${orderNumber} <br>
-            Ref No : ${refNumber == "" ? orderNumber : refNumber} <br>
-            Customer : ${customer == 0 ? 'Walk in customer' : customer.name} <br>
-            Cashier : ${user.fullname} <br>
-            Date : ${date}<br>
-            </p>
+            let customerName = (customer == 0 || !customer)
+                ? 'Walk-in Customer'
+                : (customer.name || customer.username || 'Walk-in Customer');
 
-        </left>
-        <hr>
-        <table width="100%">
-            <thead style="text-align: left;">
-            <tr>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>Price</th>
-            </tr>
-            </thead>
-            <tbody>
-            ${items}                
-     
-            <tr>                        
-                <td><b>Subtotal</b></td>
-                <td>:</td>
-                <td><b>${settings.symbol}${subTotal.toFixed(2)}</b></td>
-            </tr>
-            <tr>
-                <td>Discount</td>
-                <td>:</td>
-                <td>${discount > 0 ? settings.symbol + parseFloat(discount).toFixed(2) : ''}</td>
-            </tr>
-            
-            ${tax_row}
-        
-            <tr>
-                <td><h3>Total</h3></td>
-                <td><h3>:</h3></td>
-                <td>
-                    <h3>${settings.symbol}${parseFloat(orderTotal).toFixed(2)}</h3>
-                </td>
-            </tr>
-            ${payment == 0 ? '' : payment}
-            </tbody>
-            </table>
-            <br>
-            <hr>
-            <br>
-            <p style="text-align: center;">
-             ${settings.footer}
-             </p>
-            </div>`;
+            receipt = ReceiptBuilder.buildReceipt({
+                settings: settings,
+                imgPath: img_path,
+                orderNumber: orderNumber,
+                refNumber: refNumber == "" ? orderNumber : refNumber,
+                customerName: customerName,
+                cashier: user.fullname,
+                date: date,
+                items: cart,
+                subtotal: subTotal,
+                discount: discount,
+                tax: totalVat,
+                total: orderTotal,
+                paid: paid,
+                change: change,
+                paymentType: type,
+                barcode: orderNumber
+            });
 
 
             if (status == 3) {
                 if (cart.length > 0) {
 
-                    printJS({ printable: receipt, type: 'raw-html' });
+                    printReceipt(receipt);
 
                     $(".loading").hide();
                     return;
@@ -1017,6 +1044,7 @@ if (auth == undefined) {
                         data: JSON.stringify(data),
                         contentType: 'application/json; charset=utf-8',
                         cache: false,
+                        processData: false,
                         success: function (data) {
 
                             $(this).getHoldOrders();
@@ -1055,7 +1083,9 @@ if (auth == undefined) {
             e.preventDefault();
 
             let custData = {
-                _id: Math.floor(Date.now() / 1000),
+                // Millisecond precision keeps rapid customer creation from
+                // colliding on the unique _id index.
+                _id: Date.now(),
                 name: $('#userName').val(),
                 phone: $('#phoneNumber').val(),
                 email: $('#emailAddress').val(),
@@ -1153,11 +1183,27 @@ if (auth == undefined) {
         $('#saveProduct').submit(function (e) {
             e.preventDefault();
 
-            $(this).attr('action', api + 'inventory/product');
-            $(this).attr('method', 'POST');
+            let price = $('#product_price').val();
 
-            $(this).ajaxSubmit({
-                contentType: 'application/json',
+            if (price === "" || !$.isNumeric(parseFloat(price))) {
+                Swal.fire({
+                    title: 'Invalid Price',
+                    text: 'Please enter a numeric price, for example 250.00',
+                    icon: 'warning'
+                });
+                return;
+            }
+
+            // Sent as real multipart/form-data so the server (multer) can read
+            // the fields *and* the product image.
+            let payload = new FormData(this);
+
+            $.ajax({
+                url: api + 'inventory/product',
+                type: 'POST',
+                data: payload,
+                processData: false,
+                contentType: false,
                 success: function (response) {
 
                     $('#saveProduct').get(0).reset();
@@ -1179,8 +1225,19 @@ if (auth == undefined) {
                             $("#newProduct").modal('hide');
                         }
                     });
-                }, error: function (data) {
-                    console.log(data);
+                },
+                error: function (xhr) {
+                    let message = 'Could not save the product.';
+
+                    try {
+                        message = xhr.responseText || message;
+                    } catch (err) { }
+
+                    Swal.fire({
+                        title: 'Save Failed',
+                        html: '<pre style="white-space:pre-wrap;text-align:left">' + message + '</pre>',
+                        icon: 'error'
+                    });
                 }
             });
 
@@ -1642,20 +1699,31 @@ if (auth == undefined) {
             else {
                 storage.set('settings', formData);
 
-                $(this).attr('action', api + 'settings/post');
-                $(this).attr('method', 'POST');
+                // Real multipart/form-data so the logo upload is handled too.
+                let payload = new FormData(this);
 
-
-                $(this).ajaxSubmit({
-                    contentType: 'application/json',
+                $.ajax({
+                    url: api + 'settings/post',
+                    type: 'POST',
+                    data: payload,
+                    processData: false,
+                    contentType: false,
                     success: function (response) {
-
                         ipcRenderer.send('app-reload', '');
+                    },
+                    error: function (xhr) {
+                        let message = 'Could not save the settings.';
 
-                    }, error: function (data) {
-                        console.log(data);
+                        try {
+                            message = xhr.responseText || message;
+                        } catch (err) { }
+
+                        Swal.fire({
+                            title: 'Save Failed',
+                            html: '<pre style="white-space:pre-wrap;text-align:left">' + message + '</pre>',
+                            icon: 'error'
+                        });
                     }
-
                 });
 
             }
@@ -1919,7 +1987,7 @@ if (auth == undefined) {
 
 $.fn.print = function () {
 
-    printJS({ printable: receipt, type: 'raw-html' });
+    printReceipt(receipt);
 
 }
 
@@ -2186,68 +2254,30 @@ $.fn.viewTransaction = function (index) {
 
 
 
-    receipt = `<div style="font-size: 10px;">                            
-        <p style="text-align: center;">
-        ${settings.img == "" ? settings.img : '<img style="max-width: 50px;max-width: 100px;" src ="' + img_path + settings.img + '" /><br>'}
-            <span style="font-size: 22px;">${settings.store}</span> <br>
-            ${settings.address_one} <br>
-            ${settings.address_two} <br>
-            ${settings.contact != '' ? 'Tel: ' + settings.contact + '<br>' : ''} 
-            ${settings.tax != '' ? 'Vat No: ' + settings.tax + '<br>' : ''} 
-    </p>
-    <hr>
-    <left>
-        <p>
-        Invoice : ${orderNumber} <br>
-        Ref No : ${refNumber} <br>
-        Customer : ${allTransactions[index].customer == 0 ? 'Walk in Customer' : allTransactions[index].customer.name} <br>
-        Cashier : ${allTransactions[index].user} <br>
-        Date : ${moment(allTransactions[index].date).format('DD MMM YYYY HH:mm:ss')}<br>
-        </p>
+    let txCustomer = allTransactions[index].customer;
 
-    </left>
-    <hr>
-    <table width="100%">
-        <thead style="text-align: left;">
-        <tr>
-            <th>Item</th>
-            <th>Qty</th>
-            <th>Price</th>
-        </tr>
-        </thead>
-        <tbody>
-        ${items}                
- 
-        <tr>                        
-            <td><b>Subtotal</b></td>
-            <td>:</td>
-            <td><b>${settings.symbol}${allTransactions[index].subtotal}</b></td>
-        </tr>
-        <tr>
-            <td>Discount</td>
-            <td>:</td>
-            <td>${discount > 0 ? settings.symbol + parseFloat(allTransactions[index].discount).toFixed(2) : ''}</td>
-        </tr>
-        
-        ${tax_row}
-    
-        <tr>
-            <td><h3>Total</h3></td>
-            <td><h3>:</h3></td>
-            <td>
-                <h3>${settings.symbol}${allTransactions[index].total}</h3>
-            </td>
-        </tr>
-        ${payment == 0 ? '' : payment}
-        </tbody>
-        </table>
-        <br>
-        <hr>
-        <br>
-        <p style="text-align: center;">
-         ${settings.footer}
-         </p>
-        </div>`;
+    let customerName = (txCustomer == 0 || !txCustomer)
+        ? 'Walk-in Customer'
+        : (txCustomer.name || txCustomer.username || 'Walk-in Customer');
+
+    receipt = ReceiptBuilder.buildReceipt({
+        settings: settings,
+        imgPath: img_path,
+        orderNumber: orderNumber,
+        refNumber: refNumber,
+        customerName: customerName,
+        cashier: allTransactions[index].user,
+        date: allTransactions[index].date,
+        items: products,
+        subtotal: allTransactions[index].subtotal,
+        discount: discount,
+        tax: allTransactions[index].tax,
+        total: allTransactions[index].total,
+        paid: allTransactions[index].paid,
+        change: allTransactions[index].change,
+        paymentType: type,
+        barcode: orderNumber
+    });
 
     $('#viewTransaction').html('');
     $('#viewTransaction').html(receipt);

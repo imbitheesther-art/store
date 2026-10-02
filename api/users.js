@@ -17,6 +17,34 @@ let usersDB = new Datastore( {
 usersDB.ensureIndex({ fieldName: '_id', unique: true });
 
 
+// Assigns the user an unused millisecond-based id and inserts it.
+//
+// Date.now() / 1000 only resolves to the second, so two users created in the
+// same second produced the same _id and the second insert was silently
+// rejected by the unique index.
+function insertWithFreeId(user, attempt, done) {
+
+    let candidate = Date.now() + attempt;
+
+    usersDB.findOne({ _id: candidate }, function (err, existing) {
+
+        if (err) {
+            return done(err);
+        }
+
+        if (existing) {
+            return insertWithFreeId(user, attempt + 1, done);
+        }
+
+        user._id = candidate;
+
+        usersDB.insert(user, done);
+
+    });
+
+}
+
+
 app.get( "/", function ( req, res ) {
     res.send( "Users API" );
 } );
@@ -115,9 +143,8 @@ app.post( "/post" , function ( req, res ) {
           }
 
     if(req.body.id == "") { 
-       User._id = Math.floor(Date.now() / 1000);
-       usersDB.insert( User, function ( err, user ) {
-            if ( err ) res.status( 500 ).send( req );
+       insertWithFreeId( User, 0, function ( err, user ) {
+            if ( err ) res.status( 500 ).send( err );
             else res.send( user );
         });
     }
@@ -149,26 +176,50 @@ app.post( "/post" , function ( req, res ) {
 });
 
 
+// Seeds the default admin account on a fresh install, then always answers.
+//
+// This used to seed without ever calling res.send(), so the request hung until
+// the client gave up. pos.js calls it on startup, which made the app look like
+// it could not reach its own server.
 app.get( "/check", function ( req, res ) {
+
     usersDB.findOne( {
         _id: 1
-}, function ( err, docs ) {
-        if(!docs) {
-            let User = { 
-                "_id": 1,
-                "username": "admin",
-                "password": btoa("admin"),
-                "fullname": "Administrator",
-                "perm_products": 1,
-                "perm_categories": 1,
-                "perm_transactions": 1,
-                "perm_users": 1,
-                "perm_settings": 1,
-                "status": ""
-              }
-            usersDB.insert( User, function ( err, user ) {                            
-            });
+    }, function ( err, docs ) {
+
+        if ( err ) {
+            return res.status( 500 ).send( err );
         }
+
+        if ( docs ) {
+            return res.send( { checked: true, seeded: false } );
+        }
+
+        let User = {
+            "_id": 1,
+            "username": "admin",
+            "password": btoa("admin"),
+            "fullname": "Administrator",
+            "perm_products": 1,
+            "perm_categories": 1,
+            "perm_transactions": 1,
+            "perm_users": 1,
+            "perm_settings": 1,
+            "status": ""
+        }
+
+        usersDB.insert( User, function ( insertErr, user ) {
+
+            // A unique-index violation only means somebody else seeded first.
+            if ( insertErr && insertErr.errorType !== 'uniqueViolated' ) {
+                return res.status( 500 ).send( insertErr );
+            }
+
+            res.send( { checked: true, seeded: true } );
+
+        } );
+
     } );
+
 } );
  

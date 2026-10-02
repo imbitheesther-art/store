@@ -7,6 +7,42 @@ const fileUpload = require('express-fileupload');
 const fs = require('fs');
 
 
+// Kenya (KSh) defaults. Every fresh machine boots into Kenyan Shillings.
+const DEFAULT_CURRENCY = "KSh ";
+const DEFAULT_VAT_PERCENTAGE = "16";
+
+// Symbols shipped by earlier builds / other markets. These are migrated to
+// Kenyan Shillings on server start so an existing till switches over cleanly.
+const LEGACY_CURRENCY_SYMBOLS = [
+    "$", "US$", "USD", "usd", "$us",
+    "€", "EUR", "eur",
+    "£", "GBP", "gbp",
+    "₹", "Rs", "Rs.", "INR",
+    "R", "ZAR",
+    "₦", "NGN",
+    "¢"
+];
+
+function normaliseCurrency(symbol) {
+    let value = (symbol === undefined || symbol === null) ? "" : String(symbol).trim();
+
+    if (value === "" || LEGACY_CURRENCY_SYMBOLS.indexOf(value) > -1) {
+        return DEFAULT_CURRENCY;
+    }
+
+    return value;
+}
+
+
+function normalisePercentage(percentage) {
+    if (percentage === undefined || percentage === null || String(percentage).trim() === "") {
+        return DEFAULT_VAT_PERCENTAGE;
+    }
+
+    return percentage;
+}
+
+
 const storage = multer.diskStorage({
     destination:  process.env.APPDATA+'/POS/uploads',
     filename: function(req, file, callback){
@@ -24,6 +60,38 @@ module.exports = app;
 let settingsDB = new Datastore( {
     filename: process.env.APPDATA+"/POS/server/databases/settings.db",
     autoload: true
+} );
+
+settingsDB.ensureIndex({ fieldName: '_id', unique: true });
+
+
+// Force already-configured tills onto Kenyan Shillings / Kenya VAT rate.
+settingsDB.findOne( { _id: 1 }, function ( err, doc ) {
+
+    if ( err || !doc || !doc.settings ) {
+
+        // No settings stored yet: leave it blank so the first-run setup
+        // wizard still opens and the user supplies their store details.
+        return;
+    }
+
+    let updates = {};
+
+    if ( normaliseCurrency( doc.settings.symbol ) !== doc.settings.symbol ) {
+        updates["settings.symbol"] = normaliseCurrency( doc.settings.symbol );
+    }
+
+    if ( normalisePercentage( doc.settings.percentage ) !== doc.settings.percentage ) {
+        updates["settings.percentage"] = normalisePercentage( doc.settings.percentage );
+    }
+
+    if ( Object.keys( updates ).length > 0 ) {
+        settingsDB.update( { _id: 1 }, { $set: updates }, {}, function ( updateErr ) {
+            if ( updateErr ) console.error( updateErr );
+            else console.log( "Settings migrated to Kenyan Shillings (KSh)" );
+        } );
+    }
+
 } );
 
 
@@ -78,8 +146,8 @@ app.post( "/post", upload.single('imagename'), function ( req, res ) {
             "address_two":req.body.address_two,
             "contact": req.body.contact,
             "tax": req.body.tax,
-            "symbol": req.body.symbol,
-            "percentage": req.body.percentage,
+            "symbol": normaliseCurrency(req.body.symbol),
+            "percentage": normalisePercentage(req.body.percentage),
             "charge_tax": req.body.charge_tax,
             "footer": req.body.footer,
             "img": image
@@ -88,7 +156,10 @@ app.post( "/post", upload.single('imagename'), function ( req, res ) {
 
     if(req.body.id == "") { 
         settingsDB.insert( Settings, function ( err, settings ) {
-            if ( err ) res.status( 500 ).send( err );
+            if ( err ) {
+                console.error( err );
+                res.status( 500 ).send( err );
+            }
             else res.send( settings );
         });
     }
@@ -100,7 +171,10 @@ app.post( "/post", upload.single('imagename'), function ( req, res ) {
             numReplaced,
             settings
         ) {
-            if ( err ) res.status( 500 ).send( err );
+            if ( err ) {
+                console.error( err );
+                res.status( 500 ).send( err );
+            }
             else res.sendStatus( 200 );
         } );
 

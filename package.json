@@ -1,22 +1,64 @@
 {
   "name": "POS",
-  "version": "0.1.0",
-  "description": "Store Point of Sale System",
+  "productName": "POS",
+  "version": "1.0.0",
+  "description": "Store Point of Sale System - Kenyan Shillings (KSh)",
   "author": "Hosting Domain",
+  "license": "MIT",
   "private": true,
   "main": "start.js",
   "scripts": {
     "start": "node server.js",
     "electron": "electron start.js",
-    "package-win": "electron-packager . POS --overwrite --asar=false --platform=win32 --arch=x64 --icon=assets/images/icon.ico --prune=true --out=release-builds --version-string.ProductName=\"POS\""
+    "pack": "electron-builder --dir --win --x64 --publish never",
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "dist:all": "electron-builder --win --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.storepos.ke",
+    "productName": "POS",
+    "copyright": "Copyright (c) Store POS",
+    "asar": false,
+    "directories": {
+      "output": "release-builds"
+    },
+    "files": [
+      "start.js",
+      "server.js",
+      "renderer.js",
+      "index.html",
+      "api/**/*",
+      "assets/**/*",
+      "installers/setupEvents.js",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/images/icon.ico",
+      "artifactName": "StorePOS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "POS",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
   },
   "dependencies": {
     "async": "^2.6.4",
     "body-parser": "^1.18.2",
     "btoa": "^1.2.1",
     "electron-context-menu": "^0.15.1",
-    "electron-store": "^5.1.0",
-    "electron-winstaller": "^4.0.0",
     "express": "^4.19.2",
     "express-fileupload": "^1.1.6",
     "html2canvas": "^1.0.0-rc.5",

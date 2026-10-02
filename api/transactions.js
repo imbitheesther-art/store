@@ -97,9 +97,30 @@ app.get("/by-date", function(req, res) {
 
 
 
+// Stores a sale, retrying if the id is already taken.
+//
+// The till sends _id = Date.now(), so two sales landing in the same millisecond
+// collide on the unique _id index. That used to answer 500 and throw the sale
+// away, so retry with the next free id instead of losing it.
+function insertTransaction(transaction, attempt, done) {
+
+  transactionsDB.insert(transaction, function(err, saved) {
+
+    if (err && err.errorType === 'uniqueViolated' && attempt < 20) {
+      transaction._id = Date.now() + attempt + 1;
+      return insertTransaction(transaction, attempt + 1, done);
+    }
+
+    done(err, saved);
+
+  });
+
+}
+
+
 app.post("/new", function(req, res) {
   let newTransaction = req.body;
-  transactionsDB.insert(newTransaction, function(err, transaction) {    
+  insertTransaction(newTransaction, 0, function(err, transaction) {    
     if (err) res.status(500).send(err);
     else {
      res.sendStatus(200);

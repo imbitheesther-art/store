@@ -1,16 +1,32 @@
-const electronInstaller = require('electron-winstaller');
+// Builds the Windows installer (Setup.exe) for the POS application.
+//
+// Equivalent to `npm run dist`. The NSIS installer it produces installs
+// cleanly on any 64-bit Windows machine and creates Start Menu / Desktop
+// shortcuts. Output lands in ./release-builds
+
+const { spawnSync } = require('child_process');
 const path = require('path');
 
-const rootPath = path.join('./');
+const binary = path.join(
+  __dirname,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder'
+);
 
-resultPromise = electronInstaller.createWindowsInstaller({
-    appDirectory: './release-builds/POS-win32-x64',
-    outputDirectory: './installers',
-    authors: 'Hosting Domain',
-    noMsi: true,
-    exe: 'pos.exe',
-    setupExe: 'POSInstaller.exe',
-    setupIcon: path.join(rootPath, 'assets', 'images', 'icon.ico')
-  });
+const args = ['--win', 'nsis', '--x64', '--publish', 'never'];
 
-resultPromise.then(() => console.log("It worked!"), (e) => console.log(`No dice: ${e.message}`));
+console.log('Building Windows installer...');
+
+const result = spawnSync(binary, args, {
+  cwd: __dirname,
+  stdio: 'inherit',
+  shell: true
+});
+
+if (result.status !== 0) {
+  console.error('Installer build failed.');
+  process.exit(result.status === null ? 1 : result.status);
+}
+
+console.log('Installer build complete. See the release-builds folder.');

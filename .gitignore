@@ -4,3 +4,7 @@ undefined
 temp/
 nul
 package-lock.json
+/release-builds
+/install.log
+/build.log
+/dist
