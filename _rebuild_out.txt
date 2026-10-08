@@ -1,10 +1,10 @@
-Building Windows installer...
+
+> POS@1.0.0 dist
+> electron-builder --win nsis --x64 --publish never
+
   • electron-builder  version=21.2.0 os=10.0.19045
   • loaded configuration  file=package.json ("build" field)
   • packaging       platform=win32 arch=x64 electron=22.3.27 appOutDir=release-builds\win-unpacked
   • asar using is disabled — it is strongly not recommended  solution=enable asar and use asarUnpack to unpack files that must be externally available
   • building        target=nsis file=release-builds\StorePOS-Setup-1.0.0.exe archs=x64 oneClick=false perMachine=false
-  • downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/nsis-resources-3.4.1/nsis-resources-3.4.1.7z size=731 kB parts=1
-  • downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/nsis-resources-3.4.1/nsis-resources-3.4.1.7z duration=1.963s
   • building block map  blockMapFile=release-builds\StorePOS-Setup-1.0.0.exe.blockmap
-Installer build complete. See the release-builds folder.

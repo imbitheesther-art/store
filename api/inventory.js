@@ -11,8 +11,12 @@ const multer = require("multer");
 const fs = require('fs');
 
 
+const dbpath = require("./dbpath");
+
 const storage = multer.diskStorage({
-    destination: process.env.APPDATA + '/POS/uploads',
+    destination: function (req, file, callback) {
+        callback(null, dbpath.uploadsDir());
+    },
     filename: function (req, file, callback) {
         callback(null, Date.now() + '.jpg'); // 
     }
@@ -28,7 +32,7 @@ module.exports = app;
 
 
 let inventoryDB = new Datastore({
-    filename: process.env.APPDATA + "/POS/server/databases/inventory.db",
+    filename: dbpath.dbFile("inventory.db"),
     autoload: true
 });
 
@@ -103,7 +107,7 @@ app.post("/product", upload.single('imagename'), function (req, res) {
 
     if (req.body.remove == 1) {
         // Images live in the user data folder, not next to the app bundle.
-        const path = process.env.APPDATA + "/POS/uploads/" + req.body.img;
+        const path = require("path").join(dbpath.uploadsDir(), req.body.img);
         try {
             fs.unlinkSync(path)
         } catch (err) {

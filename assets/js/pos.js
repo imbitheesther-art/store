@@ -128,8 +128,55 @@ $.fn.serializeObject = function () {
 auth = storage.get('auth');
 user = storage.get('user');
 
+// A session is only valid when BOTH flags are present and well-formed.
+// An old config.json can survive an uninstall (deleteAppDataOnUninstall is
+// false) or be copied from a dev machine, leaving a stale `auth` behind that
+// used to open the till straight in without ever asking for a password.
+function hasValidSession() {
+    return !!(auth && auth.auth === true && user && user._id);
+}
 
-if (auth == undefined) {
+function forceLogin(reason) {
+    try { storage.delete('auth'); } catch (err) { /* ignore */ }
+    try { storage.delete('user'); } catch (err) { /* ignore */ }
+    auth = undefined;
+    user = undefined;
+    if (reason) console.warn(reason);
+    $.get(api + 'users/check/', function (data) { });
+    $("#loading").show();
+    authenticate();
+}
+
+// If the local API cannot be reached (server crashed, port blocked, ...)
+// every later save silently fails and the till looks "unable to create
+// anything". Detect that up front and tell the cashier instead.
+function watchServerConnection() {
+    $.ajax({
+        url: 'http://' + host + ':' + port + '/',
+        type: 'GET',
+        timeout: 8000,
+        cache: false
+    }).fail(function () {
+        Swal.fire(
+            'Server not reachable!',
+            'The POS opened, but it cannot reach its local server on port ' + port +
+            '. Sales, products and users cannot be saved until this is fixed. ' +
+            'Close other copies of the POS, allow it through the firewall, then restart the app.',
+            'error'
+        );
+    });
+}
+
+watchServerConnection();
+
+if (!hasValidSession()) {
+    if (auth !== undefined || user !== undefined) {
+        try { storage.delete('auth'); } catch (err) { /* ignore */ }
+        try { storage.delete('user'); } catch (err) { /* ignore */ }
+        auth = undefined;
+        user = undefined;
+        console.warn('Stale session discarded - login required.');
+    }
     $.get(api + 'users/check/', function (data) { });
     $("#loading").show();
     authenticate();
@@ -153,8 +200,19 @@ if (auth == undefined) {
     }
 
     $.get(api + 'users/user/' + user._id, function (data) {
+        // The saved user may have been deleted (or the databases wiped)
+        // while the session file survived - that used to throw on
+        // `user.fullname` and leave a half-open till. Send them back to login.
+        if (!data || !data._id) {
+            forceLogin('Saved user no longer exists - login required.');
+            return;
+        }
         user = data;
+        storage.set('user', data);
         $('#loggedin-user').text(user.fullname);
+    }).fail(function () {
+        // Server unreachable here: the watchdog above already warned, so stay
+        // on the till rather than wiping a good session in a loop.
     });
 
 

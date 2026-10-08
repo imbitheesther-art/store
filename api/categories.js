@@ -3,6 +3,7 @@ const server = require( "http" ).Server( app );
 const bodyParser = require( "body-parser" );
 const Datastore = require( "nedb" );
 const async = require( "async" );
+const dbpath = require("./dbpath");
 
 
 app.use( bodyParser.json() );
@@ -11,7 +12,7 @@ module.exports = app;
 
  
 let categoryDB = new Datastore( {
-    filename: process.env.APPDATA+"/POS/server/databases/categories.db",
+    filename: dbpath.dbFile("categories.db"),
     autoload: true
 } );
 

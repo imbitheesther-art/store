@@ -27,9 +27,12 @@
       "server.js",
       "renderer.js",
       "index.html",
+      "package.json",
       "api/**/*",
       "assets/**/*",
       "installers/setupEvents.js",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*",
       "!**/*.map"
     ],
     "win": {

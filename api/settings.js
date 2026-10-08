@@ -5,6 +5,7 @@ const Datastore = require( "nedb" );
 const multer = require("multer");
 const fileUpload = require('express-fileupload');
 const fs = require('fs');
+const dbpath = require("./dbpath");
 
 
 // Kenya (KSh) defaults. Every fresh machine boots into Kenyan Shillings.
@@ -44,7 +45,9 @@ function normalisePercentage(percentage) {
 
 
 const storage = multer.diskStorage({
-    destination:  process.env.APPDATA+'/POS/uploads',
+    destination: function(req, file, callback){
+        callback(null, dbpath.uploadsDir());
+    },
     filename: function(req, file, callback){
         callback(null, Date.now() + '.jpg'); // 
     }
@@ -58,7 +61,7 @@ module.exports = app;
 
  
 let settingsDB = new Datastore( {
-    filename: process.env.APPDATA+"/POS/server/databases/settings.db",
+    filename: dbpath.dbFile("settings.db"),
     autoload: true
 } );
 
@@ -124,7 +127,7 @@ app.post( "/post", upload.single('imagename'), function ( req, res ) {
     }
 
     if(req.body.remove == 1) {
-        const path = process.env.APPDATA+"/POS/uploads/"+ req.body.img;
+        const path = require("path").join(dbpath.uploadsDir(), req.body.img);
         try {
           fs.unlinkSync(path)
         } catch(err) {

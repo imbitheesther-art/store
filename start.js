@@ -1,10 +1,66 @@
+// ---------------------------------------------------------------------------
+// Self-healing launch guard.
+//
+// VS Code's integrated terminal (and some CI shells) export
+// ELECTRON_RUN_AS_NODE=1. When that variable is present Electron starts as a
+// plain Node process instead of an app: require('electron') resolves to the
+// npm package's path string (or fails outright in a packaged build), so
+// destructuring { app, BrowserWindow } yields undefined, electron-context-menu
+// throws "Not running in an Electron environment!" and the process dies
+// before a window is ever created - which looks exactly like "the app opens
+// but never connects / never asks for a password".
+//
+// Detect that mode and re-exec ourselves once with the variable removed.
+// ---------------------------------------------------------------------------
+(function relaunchIfRunningAsNode() {
+    let electronModule;
+    try { electronModule = require('electron'); } catch (err) { electronModule = null; }
+
+    // A working API object means we are inside a real Electron app (the
+    // storage tests stub `electron` with such an object) - never relaunch then.
+    const electronLooksUsable = !!electronModule && typeof electronModule === 'object';
+    const runningAsNode = !electronLooksUsable &&
+        (typeof electronModule === 'string' || !!process.env.ELECTRON_RUN_AS_NODE);
+    if (!runningAsNode) return;
+
+    const env = Object.assign({}, process.env);
+    delete env.ELECTRON_RUN_AS_NODE;
+
+    // Drop our own entry point from the argument list before re-launching.
+    let args = process.argv.slice(2);
+    if (args.length && (args[0] === __filename || args[0] === '.' || /[\\\/]start\.js$/.test(args[0]))) {
+        args = args.slice(1);
+    }
+
+    const executable = typeof electronModule === 'string' ? electronModule : process.execPath;
+    const result = require('child_process').spawnSync(
+        executable,
+        [__filename].concat(args),
+        { stdio: 'inherit', env: env, cwd: process.cwd() }
+    );
+
+    process.exit(result.status === null ? 1 : result.status);
+})();
+
 const setupEvents = require('./installers/setupEvents');
 if (setupEvents.handleSquirrelEvent()) {
     return;
 }
 
-const server = require('./server');
-const {app, BrowserWindow, ipcMain, screen} = require('electron');
+// The API server is required before the window exists. If it throws (bad
+// syntax, missing module, ...) the whole main process used to die silently:
+// no window, no API, and the app looked like it "could not connect". Load it
+// defensively so the UI always opens and can tell the user what went wrong.
+let server = null;
+let serverError = null;
+
+try {
+    server = require('./server');
+} catch (err) {
+    serverError = err;
+    console.error('The POS API server failed to start:', err && err.message ? err.message : err);
+}
+const {app, BrowserWindow, ipcMain, screen, dialog} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const contextMenu = require('electron-context-menu');
@@ -39,7 +95,20 @@ function createWindow() {
     });
 }
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+    createWindow();
+
+    // Surface API startup failures instead of leaving a UI that can never
+    // reach the server (the "not connecting / can't create anything" symptom).
+    if (serverError) {
+        dialog.showErrorBox(
+            'POS server failed to start',
+            'The local POS server could not start, so products, users and sales cannot be saved.\n\n' +
+            (serverError && serverError.message ? serverError.message : String(serverError)) +
+            '\n\nReinstall the app or check that port 8001 is not blocked.'
+        );
+    }
+});
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
