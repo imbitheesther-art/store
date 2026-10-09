@@ -67,4 +67,41 @@ function uploadsDir() {
 ensureDir(nodePath.join(baseDir(), "server", "databases"));
 ensureDir(nodePath.join(baseDir(), "uploads"));
 
+// ---------------------------------------------------------------------------
+// Remove orphaned NeDB compaction temp files (the `*.db~` scratch files).
+//
+// NeDB compacts a datastore by copying every record into `<file>.db~` and then
+// renaming that over `<file>.db`. If the app is killed / crashes / loses power
+// between those two steps, the `.db~` file is left behind. The real `.db` is
+// still the good copy, but the next compaction collides with the stale scratch
+// file (a `rename` EPERM) which can wedge the whole server - the UI then "opens
+// but shows no data and stops responding".
+//
+// No compaction is ever in progress at startup, so any `*.db~` present here is
+// guaranteed to be leftover garbage and is safe to delete. This runs before any
+// Datastore is constructed (server.js requires this module first, and only
+// after start.js has taken the single-instance lock), so we never delete a file
+// another live process is still writing.
+// ---------------------------------------------------------------------------
+function cleanupStaleTempFiles() {
+  const dir = nodePath.join(baseDir(), "server", "databases");
+  let entries;
+  try {
+    entries = fs.readdirSync(dir);
+  } catch (err) {
+    return; // folder missing / unreadable - nothing to clean
+  }
+  entries.forEach(function (name) {
+    if (!/\.db~$/.test(name)) return;
+    try {
+      fs.unlinkSync(nodePath.join(dir, name));
+    } catch (err) {
+      // Best-effort: another handle may briefly hold it. Ignore and move on;
+      // a fresh start with the single-instance lock will not have this issue.
+    }
+  });
+}
+
+cleanupStaleTempFiles();
+
 module.exports = { baseDir, dbFile, uploadsDir, ensureDir };

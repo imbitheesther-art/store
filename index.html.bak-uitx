@@ -104,27 +104,17 @@
     <div id="transactions_view">
         <div class="row">
             <div class="col-md-12">
-                <div class="card-box">
-                    <div class="row">
-                        <h3 class="col-md-2">Transactions</h3>
-                        <div class="col-md-2">
+                <div class="card-box"> 
+                    <div class="row">               
+                        <h3 class="col-md-2">Transactions</h3> 
+                        <div class="col-md-1">
                             <span>Till</span>
-                            <select id="tills" class="form-control">
+                            <select id="tills" class="form-control">                              
                             </select>
                         </div>
                         <div class="col-md-2">
                             <span>Cashier</span>
                             <select id="users" class="form-control">
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <span>Payment Method</span>
-                            <select id="pay_methods" class="form-control">
-                                <option value="">All</option>
-                                <option value="Cash">Cash</option>
-                                <option value="Card">Card</option>
-                                <option value="M-Pesa">M-Pesa</option>
-                                <option value="Split">Split</option>
                             </select>
                         </div>
                         <div class="col-md-1">
@@ -141,76 +131,77 @@
                                 <span></span> <i class="fa fa-caret-down"></i>
                             </div>
                         </div>
-                    </div>
+                    </div>   
                         <hr>
-                        <div class="row tx-stats">
-                            <div class="col-md-3">
-                                <div id="total_sales" class="stat-card stat-green">
-                                    <h5>SALES</h5>
-                                    <div class="stat-value">0</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div id="total_transactions" class="stat-card stat-orange">
-                                    <h5>TRANSACTIONS</h5>
-                                    <div class="stat-value">0</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div id="total_items" class="stat-card stat-blue">
-                                    <h5>ITEMS</h5>
-                                    <div class="stat-value">0</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div id="total_products" class="stat-card stat-grey">
-                                    <h5>PRODUCTS</h5>
-                                    <div class="stat-value">0</div>
-                                </div>
-                            </div>
-                        </div>
-
                         <div class="row">
-                            <div class="col-md-7">
-                                <div class="tx-panel">
-                                    <h4>Sales by Payment Method</h4>
-                                    <hr>
-                                    <div id="chart_payments" class="tx-chart">
-                                        <p class="tx-empty">No payment data for this selection</p>
-                                    </div>
-                                </div>
-                            </div>
+                           
+
                             <div class="col-md-5">
-                                <div class="tx-panel">
-                                    <h4>Top Products</h4>
-                                    <hr>
-                                    <div id="chart_products" class="tx-chart">
-                                        <p class="tx-empty">No product data for this selection</p>
+                                <div class="row">
+                                    <div class="col-md-8" id="productSales">
+                                            <h4>Products</h4>
+                                            <hr>
+                                            <table class="table tablesaw-enhanced" id="productsSold">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                        <th>Sold</th>
+                                                        <th>Available</th> 
+                                                        <th>Sales</th>                                                                                                           
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="product_sales"></tbody>
+                                            </table>
                                     </div>
-                                </div>
-                            </div>
+                                    <div class="col-md-4" id="totals">
+                                            <h4>Total</h4>
+                                            <hr>
+                                    
+                                            <div id="total_sales" class="btn-success">
+                                                <h5>SALES</h5>
+                                                <div id="counter">0</div>
+                                            </div>
+                                       
+                                            <div id="total_transactions" class="btn-warning">
+                                                <h5>TRANSACTIONS</h5>
+                                                <div id="counter">0</div>
+                                            </div>
+                                
+                                            <div id="total_items" class="btn-info">
+                                                <h5>ITEMS</h5>
+                                                <div id="counter">0</div>
+                                            </div>
+
+                                            <div id="total_products" class="btn-default">
+                                                <h5>PRODUCTS</h5>
+                                                <div id="counter">0</div>
+                                            </div>
+                                                                         
+                                    </div>
+                                   
+                               </div>
+                           </div>
+
+                           <div class="col-md-7">
+                            <table class="table tablesaw-enhanced" id="transactionList">
+                                <thead>
+                                    <tr>                                                                      
+                                        <th>Invoice</th>                                      
+                                        <th>Date</th>
+                                        <th>Total</th>
+                                        <th>Paid</th>
+                                        <th>Change</th>
+                                        <th>Method</th>
+                                        <th>Till</th>
+                                        <th>Cashier</th>
+                                        <th>View</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transaction_list"></tbody>
+                            </table>
                         </div>
 
-                        <div class="row">
-                            <div class="col-md-12">
-                                <table class="table tablesaw-enhanced" id="transactionList">
-                                    <thead>
-                                        <tr>
-                                            <th>Invoice</th>
-                                            <th>Date</th>
-                                            <th>Total</th>
-                                            <th>Paid</th>
-                                            <th>Change</th>
-                                            <th>Method</th>
-                                            <th>Till</th>
-                                            <th>Cashier</th>
-                                            <th>View</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="transaction_list"></tbody>
-                                </table>
-                            </div>
-                        </div>
+                      </div>                    
                 </div>
             </div>
         </div>
@@ -221,7 +212,7 @@
       <div class="row">
           <div class="col-md-4">
               <div class="card-box" id="card-box">
-                  <div class="pos-head">
+                  <div class="col-md-12">
                       <div class="row">
                           <div class="col-md-10">
                               <select name="" id="customer" class="form-control">
@@ -241,7 +232,7 @@
                           </span>
                       </div>
                   </div>
-                  <div class="cart-wrap">
+                  <div>
                       <table class="table m-0" id="cartTable">
   
                           <thead>
@@ -264,7 +255,7 @@
                   </div>
   
                   <hr>
-                 <div class="m-t-5 pos-totals">
+                 <div class="m-t-5">
                      <div class="row">
                          <div class="col-md-3">Total Item(s)</div>
                          <div class="col-md-3">: <sapn id="total">0</sapn></div>
@@ -280,7 +271,7 @@
   
                  </div>
   
-                  <div class="button-list pos-actions">
+                  <div class="button-list pull-right">
 
                     <button onclick="$(this).submitDueOrder(3);" type="button" class="btn btn-info waves-effect waves-light">
                         <i class="fa fa-print"></i> 

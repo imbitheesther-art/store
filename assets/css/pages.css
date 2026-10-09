@@ -3,24 +3,93 @@
   display: none;
 }
 
-#card-box tr {
-  display: block;
+/* POS left card: fixed-height flex column so the cart can never overflow the
+   viewport - the table area scrolls inside the card instead of pushing it
+   past the bottom of the screen. */
+#card-box {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 115px);
+  max-height: calc(100vh - 115px);
+  overflow: hidden;
 }
 
-#card-box th,
-#card-box td:first-child {
-  width: 10px;
+#card-box .pos-head {
+  flex: 0 0 auto;
+  overflow: hidden;
 }
 
-#card-box th,
-#card-box td:nth-child(2) {
-  width: 150px;
+#card-box .cart-wrap {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
-#cartTable tbody {
-  display: block;
-  height: calc(100vh - 425px);
-  overflow: auto;
+#cartTable {
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+}
+
+#cartTable th:nth-child(2),
+#cartTable td:nth-child(2) {
+  width: auto;
+}
+
+#cartTable th:nth-child(1),
+#cartTable td:nth-child(1) {
+  width: 30px;
+}
+
+#cartTable th:nth-child(3),
+#cartTable td:nth-child(3) {
+  width: 145px;
+}
+
+#cartTable th:nth-child(4),
+#cartTable td:nth-child(4) {
+  width: 85px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+#cartTable th:nth-child(5),
+#cartTable td:nth-child(5) {
+  width: 40px;
+  text-align: center;
+}
+
+#cartTable td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+#cartTable thead th {
+  font-weight: 700;
+  color: #2c3238;
+}
+
+#cartTable input[type="number"] {
+  min-width: 0;
+  width: 100%;
+  text-align: center;
+  -webkit-appearance: textfield;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+#card-box .pos-totals {
+  flex: 0 0 auto;
+  background: #fff;
+}
+
+#card-box .pos-actions {
+  flex: 0 0 auto;
+  text-align: right;
+  margin-top: 5px;
 }
 
 #parent {
@@ -76,10 +145,20 @@
   height: 40px;
   overflow: hidden;
   border-bottom: 1px solid #f1f1f1;
+  color: #2c3238;
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .stock {
   font-size: 11px;
+  color: #666;
+  font-weight: 700;
+}
+
+.count {
+  color: #2c3238;
+  font-weight: 700;
 }
 
 .sku {
@@ -96,7 +175,7 @@
 }
 
 .receipt {
-  font-family: 'Share Tech', sans-serif;
+  font-family: "Consolas", "Courier New", monospace;
 }
 
 .print-btn {
@@ -106,7 +185,7 @@
 
 @media print {
   .receipt {
-    font-family: 'Share Tech', sans-serif;
+    font-family: "Consolas", "Courier New", monospace;
   }
 
   .print-head {
@@ -198,63 +277,108 @@
   border: 1px solid #ddd;
   font-size: 16px;
   padding: 40px;
-  background: #f1f1f1;
-  color: #f2f8fb;
+  background: #ffffff;
+  color: #2c3238;
   border-radius: 8px;
 }
 
-#productSales {
-  height: 620px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  overflow-y: scroll;
+/* Transactions stats + charts -------------------------------------------- */
+.tx-stats {
+  margin-top: 15px;
 }
 
-#total_sales {
-  width: 100%;
-  color: #666;
-  height: 120px;
-  border: 1px solid #fff;
-  border-radius: 5px;
-  margin-bottom: 20px;
+.tx-stats .col-md-3 {
+  padding-left: 5px;
+  padding-right: 5px;
 }
 
-#total_transactions {
-  width: 100%;
-  color: #666;
-  height: 120px;
-  border: 1px solid #fff;
+.stat-card {
+  height: 90px;
+  margin-bottom: 15px;
   border-radius: 5px;
-  margin-bottom: 20px;
-}
-
-#total_items {
-  width: 100%;
-  color: #666;
-  height: 120px;
-  border: 1px solid #fff;
-  border-radius: 5px;
-  margin-bottom: 20px;
-}
-
-#total_products {
-  width: 100%;
-  color: #666;
-  height: 120px;
-  border: 1px solid #fff;
-  border-radius: 5px;
-  margin-bottom: 20px;
-}
-
-#totals h5 {
-  text-align: center;
-  margin: 10px;
+  padding: 12px 15px;
   color: #fff;
 }
 
-#counter {
-  text-align: center !important;
+.stat-card h5 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.stat-card .stat-value {
+  margin-top: 8px;
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #fff;
+}
+
+.stat-green {
+  background-color: #4caf50;
+}
+
+.stat-orange {
+  background-color: #ff9800;
+}
+
+.stat-grey {
+  background-color: #808080;
+}
+
+.stat-blue {
+  background-color: #4081b5;
+}
+
+.tx-panel {
+  background: #fff;
+  border: 1px solid #e4e7ea;
+  border-radius: 5px;
+  padding: 15px;
+  margin-bottom: 15px;
+  min-height: 240px;
+}
+
+.tx-panel h4 {
+  margin: 0 0 5px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #2c3238;
+}
+
+.tx-panel hr {
   margin-top: 10px;
-  font-size: 32px;
+  margin-bottom: 12px;
+  border-color: #e4e7ea;
+}
+
+.tx-chart {
+  min-height: 160px;
+  overflow-x: hidden;
+}
+
+.tx-chart svg {
+  display: block;
   width: 100%;
+  height: auto;
+}
+
+.tx-empty {
+  margin: 40px 0;
+  text-align: center;
+  font-size: 13px;
+  color: #808080;
+}
+
+.bar-label {
+  fill: #2c3238;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bar-value {
+  fill: #555;
+  font-size: 12px;
+  font-weight: 700;
 }

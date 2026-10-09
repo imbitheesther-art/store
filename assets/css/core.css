@@ -1,12 +1,14 @@
-@import url(https://fonts.googleapis.com/css?family=Noto+Sans:400,700);
-@import url(https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,600,700,300);
+/* Production build: never pull fonts over the internet. A packaged, offline
+   till that @imports Google Fonts stalls first paint waiting on the network and
+   then falls back anyway - that was a real "slow to open" cause. Use the clean
+   Windows UI font stack that is already on the machine. */
 
 body {
   background: #ebeff2;
-  font-family: 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", "Segoe UI Semibold", "Helvetica Neue", Helvetica, Arial, sans-serif;
   margin: 0;
   overflow-x: hidden;
-  color: #797979;
+  color: #4a4f54;
 }
 html {
   position: relative;
@@ -19,8 +21,8 @@ h3,
 h4,
 h5,
 h6 {
-  color: #505458;
-  font-family: "Source Sans Pro", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #3c4147;
+  font-family: "Segoe UI Semibold", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
   margin: 10px 0;
 }
 h1 {
@@ -830,7 +832,7 @@ textarea.form-control {
   letter-spacing: 0.03em;
   font-weight: 600;
   text-transform: uppercase;
-  font-family: "Source Sans Pro", "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI Semibold", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 .nav.nav-tabs > li > a:hover,
 .nav.tabs-vertical > li > a:hover {

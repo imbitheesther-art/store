@@ -99,6 +99,15 @@ function buildReceipt(opts) {
                 <td>:</td>
                 <td>${esc(opts.paymentType)}</td>
             </tr>`;
+
+        // Extra detail line for M-Pesa code, card info or a split breakdown.
+        if (opts.paymentInfo !== undefined && opts.paymentInfo !== null && String(opts.paymentInfo) !== '') {
+            paymentRows += `<tr>
+                <td>Details</td>
+                <td>:</td>
+                <td>${esc(opts.paymentInfo)}</td>
+            </tr>`;
+        }
     }
 
     let barcode = barcodeSvg(opts.barcode);
@@ -107,7 +116,11 @@ function buildReceipt(opts) {
 
     let logo = settings.img ? `<img class="logo" src="${esc(imgPath + settings.img)}" alt="" /><br>` : '';
 
-    let footer = settings.footer ? `<p class="footer">${esc(settings.footer)}</p>` : '';
+    // The closing message is the shop's own footer text from Settings. If the
+    // shop has not set one we print a neutral line instead - never the old
+    // hard-coded "Thank you for your patronage!" which ignored the configured
+    // footer entirely.
+    let closingMsg = settings.footer ? esc(settings.footer) : 'Thank you for shopping with us!';
 
     return `<!DOCTYPE html>
 <html>
@@ -187,8 +200,7 @@ function buildReceipt(opts) {
 
     <hr>
 
-    <p class="thanks">Thank you for your patronage!</p>
-    ${footer}
+    <p class="thanks">${closingMsg}</p>
     <p class="center">Served by ${esc(opts.cashier)}</p>
 
 </div>

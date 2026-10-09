@@ -1,0 +1,68 @@
+                        <div class="row tx-stats">
+                            <div class="col-md-3">
+                                <div id="total_sales" class="stat-card stat-green">
+                                    <h5>SALES</h5>
+                                    <div class="stat-value">0</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div id="total_transactions" class="stat-card stat-orange">
+                                    <h5>TRANSACTIONS</h5>
+                                    <div class="stat-value">0</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div id="total_items" class="stat-card stat-blue">
+                                    <h5>ITEMS</h5>
+                                    <div class="stat-value">0</div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div id="total_products" class="stat-card stat-grey">
+                                    <h5>PRODUCTS</h5>
+                                    <div class="stat-value">0</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-7">
+                                <div class="tx-panel">
+                                    <h4>Sales by Payment Method</h4>
+                                    <hr>
+                                    <div id="chart_payments" class="tx-chart">
+                                        <p class="tx-empty">No payment data for this selection</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-5">
+                                <div class="tx-panel">
+                                    <h4>Top Products</h4>
+                                    <hr>
+                                    <div id="chart_products" class="tx-chart">
+                                        <p class="tx-empty">No product data for this selection</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-12">
+                                <table class="table tablesaw-enhanced" id="transactionList">
+                                    <thead>
+                                        <tr>
+                                            <th>Invoice</th>
+                                            <th>Date</th>
+                                            <th>Total</th>
+                                            <th>Paid</th>
+                                            <th>Change</th>
+                                            <th>Method</th>
+                                            <th>Till</th>
+                                            <th>Cashier</th>
+                                            <th>View</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="transaction_list"></tbody>
+                                </table>
+                            </div>
+                        </div>

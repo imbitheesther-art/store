@@ -47,6 +47,29 @@ if (setupEvents.handleSquirrelEvent()) {
     return;
 }
 
+const {app, BrowserWindow, ipcMain, screen, dialog} = require('electron');
+
+// ---------------------------------------------------------------------------
+// Single-instance guard.
+//
+// Two POS windows on one machine fight over TCP port 8001 AND over the same
+// NeDB files on disk. The loser still opens its databases while never getting
+// to answer the port, and concurrent access to the shared files is exactly how
+// the server ends up wedged - "the app opens but shows no data / stops
+// responding". requestSingleInstanceLock() lets the first copy run and turns
+// every later launch into a no-op that just focuses the window already open.
+// ---------------------------------------------------------------------------
+if (!app.requestSingleInstanceLock()) {
+    app.quit();
+    return;
+}
+app.on('second-instance', () => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+    }
+});
+
 // The API server is required before the window exists. If it throws (bad
 // syntax, missing module, ...) the whole main process used to die silently:
 // no window, no API, and the app looked like it "could not connect". Load it
@@ -60,7 +83,6 @@ try {
     serverError = err;
     console.error('The POS API server failed to start:', err && err.message ? err.message : err);
 }
-const {app, BrowserWindow, ipcMain, screen, dialog} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const contextMenu = require('electron-context-menu');
@@ -110,11 +132,34 @@ app.on('ready', () => {
     }
 });
 
+// ---------------------------------------------------------------------------
+// Shut the local API server down when the app closes.
+//
+// The server is a plain Node http.Server living inside this same process, so it
+// normally dies with us - but on Windows a lingering listener on port 8001 can
+// outlive a force-killed renderer and make the *next* launch hit EADDRINUSE and
+// wedge. Close it explicitly on every quit path so port 8001 is always released
+// and the next start is clean.
+// ---------------------------------------------------------------------------
+let serverStopped = false;
+function stopServer() {
+    if (serverStopped || !server || typeof server.close !== 'function') return;
+    serverStopped = true;
+    try {
+        server.close(() => console.log('POS server stopped.'));
+    } catch (err) {
+        console.error('Error stopping the POS server:', err && err.message ? err.message : err);
+    }
+}
+
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
+        stopServer();
         app.quit();
     }
 });
+
+app.on('before-quit', stopServer);
 
 app.on('activate', () => {
     if (mainWindow === null) {
@@ -123,6 +168,7 @@ app.on('activate', () => {
 });
 
 ipcMain.on('app-quit', (evt, arg) => {
+    stopServer();
     app.quit();
 });
 

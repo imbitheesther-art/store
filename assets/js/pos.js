@@ -13,7 +13,7 @@ let holdOrder = 0;
 let vat = 0;
 let perms = null;
 let deleteId = 0;
-let paymentType = 0;
+let paymentType = 'Cash';
 let receipt = '';
 let totalVat = 0;
 let subTotal = 0;
@@ -76,6 +76,36 @@ let end_date = moment(end).toDate();
 let by_till = 0;
 let by_user = 0;
 let by_status = 1;
+// Payment-method filter for the transactions view ("" = all methods).
+// Compared against paymentTypeLabel() output, so it works for both the new
+// string values ('Cash' | 'M-Pesa' | 'Card' | 'Split') and legacy numbers.
+let by_method = "";
+
+// Human-readable payment method for a stored transaction.
+//
+// New sales store the method as a string ('Cash' | 'M-Pesa' | 'Card' | 'Split').
+// Older rows stored a number, so translate those too - this is what fixes the
+// "every transaction shows Card" bug, where the old display compared a stored
+// *string* against the *number* 0 and always fell through to 'Card'.
+function paymentTypeLabel(value) {
+    switch (value) {
+        case 'Cash':
+        case 'M-Pesa':
+        case 'Card':
+        case 'Split':
+            return value;
+        case 0:
+            return 'Cash';
+        case 1:
+            return 'Cash';
+        case 2:
+            return 'Card';
+        case 3:
+            return 'Card';
+        default:
+            return value === undefined || value === null || value === '' ? '' : String(value);
+    }
+}
 
 $(function () {
 
@@ -169,6 +199,31 @@ function watchServerConnection() {
 
 watchServerConnection();
 
+// ---------------------------------------------------------------------------
+// Startup readiness gate.
+//
+// The first data fetches fire while the Electron main process is still
+// warming up the API (NeDB autoloading its datastores on first load can take
+// a moment, and on a cold start the server may not be listening yet). One
+// failed fetch used to leave the till permanently empty - no products, no
+// categories, no customers - until a manual reload. Retry the critical
+// startup loads a few times with a short backoff before giving up.
+// ---------------------------------------------------------------------------
+function getWhenReady(url, onSuccess, attempt) {
+    attempt = attempt || 0;
+    $.get(url, function (data) {
+        onSuccess(data);
+    }).fail(function () {
+        if (attempt < 5) {
+            setTimeout(function () {
+                getWhenReady(url, onSuccess, attempt + 1);
+            }, 600);
+        } else {
+            console.warn('Gave up loading ' + url + ' after several attempts.');
+        }
+    });
+}
+
 if (!hasValidSession()) {
     if (auth !== undefined || user !== undefined) {
         try { storage.delete('auth'); } catch (err) { /* ignore */ }
@@ -216,7 +271,7 @@ if (!hasValidSession()) {
     });
 
 
-    $.get(api + 'settings/get', function (data) {
+    getWhenReady(api + 'settings/get', function (data) {
         settings = data.settings;
 
         if (settings) {
@@ -231,7 +286,7 @@ if (!hasValidSession()) {
     });
 
 
-    $.get(api + 'users/all', function (users) {
+    getWhenReady(api + 'users/all', function (users) {
         allUsers = [...users];
     });
 
@@ -247,7 +302,9 @@ if (!hasValidSession()) {
 
 
         if (settings && settings.symbol) {
-            $("#price_curr, #payment_curr, #change_curr").text(settings.symbol);
+            // Attribute selector so ALL currency spans get the symbol, not just the
+        // first #payment_curr (the split M-Pesa/Cash labels reuse that id).
+        $("#price_curr, #change_curr, [id='payment_curr']").text(settings.symbol);
         }
 
 
@@ -283,7 +340,7 @@ if (!hasValidSession()) {
 
         function loadProducts() {
 
-            $.get(api + 'inventory/products', function (data) {
+            getWhenReady(api + 'inventory/products', function (data) {
 
                 data.forEach(item => {
                     item.price = parseFloat(item.price).toFixed(2);
@@ -306,11 +363,11 @@ if (!hasValidSession()) {
                                 onclick="$(this).addToCart(${item._id}, ${item.quantity}, ${item.stock})">
                             <div class="widget-panel widget-style-2 ">                    
                             <div id="image"><img src="${item.img == "" ? "./assets/images/default.jpg" : img_path + item.img}" id="product_img" alt=""></div>                    
-                                        <div class="text-muted m-t-5 text-center">
-                                        <div class="name" id="product_name">${item.name}</div> 
+                                        <div class="m-t-5 text-center">
+                                        <div class="name" id="product_name">${item.name}</div>
                                         <span class="sku">${item.sku}</span>
                                         <span class="stock">STOCK </span><span class="count">${item.stock == 1 ? item.quantity : 'N/A'}</span></div>
-                                        <sp class="text-success text-center"><b data-plugin="counterup">${settings.symbol + item.price}</b> </sp>
+                                        <span class="price"><b data-plugin="counterup">${settings.symbol + item.price}</b></span>
                             </div>
                         </div>`;
                     $('#parent').append(item_info);
@@ -330,7 +387,7 @@ if (!hasValidSession()) {
         }
 
         function loadCategories() {
-            $.get(api + 'categories/all', function (data) {
+            getWhenReady(api + 'categories/all', function (data) {
                 allCategories = data;
                 loadCategoryList();
                 $('#category').html(`<option value="0">Select</option>`);
@@ -343,7 +400,7 @@ if (!hasValidSession()) {
 
         function loadCustomers() {
 
-            $.get(api + 'customers/all', function (customers) {
+            getWhenReady(api + 'customers/all', function (customers) {
 
                 $('#customer').html(`<option value="0" selected="selected">Walk in customer</option>`);
 
@@ -766,25 +823,40 @@ if (!hasValidSession()) {
             let discount = $("#inputDiscount").val();
             let customer = JSON.parse($("#customer").val());
             let date = moment(currentTime).format("YYYY-MM-DD HH:mm:ss");
-            let paid = $("#payment").val() == "" ? "" : parseFloat($("#payment").val()).toFixed(2);
-            let change = $("#change").text() == "" ? "" : parseFloat($("#change").text()).toFixed(2);
+
+            // Payment method is now a plain string: 'Cash' | 'M-Pesa' | 'Card' | 'Split'.
+            // For a split sale the two amounts are combined into one tendered total,
+            // and the breakdown is kept in payment_info so the receipt / history show
+            // exactly how the customer paid.
+            let type = paymentType;
+            let paid = "";
+            let change = "";
+            let paymentInfo = "";
+
+            if (paymentType === 'Split') {
+                let mpesaAmt = parseFloat($("#splitMpesa").val()) || 0;
+                let cashAmt = parseFloat($("#splitCash").val()) || 0;
+                let tendered = mpesaAmt + cashAmt;
+                paid = tendered > 0 ? tendered.toFixed(2) : "";
+                let diff = tendered - (parseFloat(orderTotal) || 0);
+                change = diff > 0 ? diff.toFixed(2) : "0.00";
+                paymentInfo = 'M-Pesa ' + mpesaAmt.toFixed(2) + ' + Cash ' + cashAmt.toFixed(2);
+                if ($("#paymentInfo").val()) {
+                    paymentInfo += ' (code ' + $("#paymentInfo").val() + ')';
+                }
+            } else {
+                paid = $("#payment").val() == "" ? "" : parseFloat($("#payment").val()).toFixed(2);
+                change = $("#change").text() == "" ? "" : parseFloat($("#change").text()).toFixed(2);
+                if (paymentType === 'M-Pesa') {
+                    paymentInfo = $("#paymentInfo").val();
+                } else if (paymentType === 'Card') {
+                    paymentInfo = $("#cardDetails").val();
+                }
+            }
+
             let refNumber = $("#refNumber").val();
             let orderNumber = holdOrder;
-            let type = "";
             let tax_row = "";
-
-
-            switch (paymentType) {
-
-                case 1: type = "Cheque";
-                    break;
-
-                case 2: type = "Card";
-                    break;
-
-                default: type = "Cash";
-
-            }
 
 
             if (paid != "") {
@@ -868,6 +940,7 @@ if (!hasValidSession()) {
                 paid: paid,
                 change: change,
                 paymentType: type,
+                paymentInfo: paymentInfo,
                 barcode: orderNumber
             });
 
@@ -901,7 +974,7 @@ if (!hasValidSession()) {
                 items: cart,
                 date: currentTime,
                 payment_type: type,
-                payment_info: $("#paymentInfo").val(),
+                payment_info: paymentInfo,
                 total: orderTotal,
                 paid: paid,
                 change: change,
@@ -946,6 +1019,11 @@ if (!hasValidSession()) {
             $("#refNumber").val('');
             $("#change").text('');
             $("#payment").val('');
+            $("#splitMpesa").val('');
+            $("#splitCash").val('');
+            $("#paymentInfo").val('');
+            $("#cardDetails").val('');
+            setPaymentType('Cash');
 
         }
 
@@ -1178,14 +1256,48 @@ if (!hasValidSession()) {
         $("#confirmPayment").hide();
 
         $("#cardInfo").hide();
+        $("#mpesaCodeBox").hide();
+        $("#splitPayBox").hide();
 
+        // Single-method payment box recalculates change as you type.
         $("#payment").on('input', function () {
             $(this).calculateChange();
         });
 
+        // Split boxes (M-Pesa + Cash) recalculate the combined tendered amount.
+        $("#splitMpesa, #splitCash").on('input', function () {
+            $(this).calculateChange();
+        });
+
+
+        // Switches the Payment modal between Cash / M-Pesa / Card / Split,
+        // showing only the inputs that method needs.
+        window.setPaymentType = function (type) {
+
+            paymentType = type;
+
+            $(".pay-method").removeClass('active');
+            $("#pm_" + (type === 'Split' ? 'split' : type.toLowerCase().replace('-', ''))).addClass('active');
+
+            var isSplit = (type === 'Split');
+            var isMpesa = (type === 'M-Pesa');
+
+            $("#singlePayBox").toggle(!isSplit);
+            $("#splitPayBox").toggle(isSplit);
+            $("#mpesaCodeBox").toggle(isMpesa || isSplit);
+            $("#cardInfo").toggle(type === 'Card');
+
+            // Reset any partial entry so a stale amount can't be submitted.
+            $("#payment").val('');
+            $("#splitMpesa").val('');
+            $("#splitCash").val('');
+            $("#change").text('');
+            $("#confirmPayment").hide();
+        };
+
 
         $("#confirmPayment").on('click', function () {
-            if ($('#payment').val() == "") {
+            if ($(this).tenderedAmount() <= 0) {
                 Swal.fire(
                     'Nope!',
                     'Please enter the amount that was paid!',
@@ -2054,6 +2166,7 @@ function loadTransactions() {
 
     let tills = [];
     let users = [];
+    let methods = [];
     let sales = 0;
     let transact = 0;
     let unique = 0;
@@ -2063,10 +2176,19 @@ function loadTransactions() {
 
     let counter = 0;
     let transaction_list = '';
-    let query = `by-date?start=${start_date}&end=${end_date}&user=${by_user}&status=${by_status}&till=${by_till}`;
+    let query = `by-date?start=${start_date}&end=${end_date}&user=${by_user}&status=${by_status}&till=${by_till}&method=${encodeURIComponent(by_method)}`;
 
 
     $.get(api + query, function (transactions) {
+
+        // The /by-date endpoint has no payment-method support yet, so the
+        // method filter is applied here on the fetched rows. Stats, table and
+        // charts below are all built from this filtered list.
+        if (by_method !== "") {
+            transactions = transactions.filter(function (trans) {
+                return paymentTypeLabel(trans.payment_type) === by_method;
+            });
+        }
 
         if (transactions.length > 0) {
 
@@ -2096,6 +2218,11 @@ function loadTransactions() {
                     users.push(trans.user_id);
                 }
 
+                let method_label = paymentTypeLabel(trans.payment_type);
+                if (method_label !== '' && !methods.includes(method_label)) {
+                    methods.push(method_label);
+                }
+
                 counter++;
                 transaction_list += `<tr>
                                 <td>${trans.order}</td>
@@ -2103,7 +2230,7 @@ function loadTransactions() {
                                 <td>${settings.symbol + trans.total}</td>
                                 <td>${trans.paid == "" ? "" : settings.symbol + trans.paid}</td>
                                 <td>${trans.change ? settings.symbol + Math.abs(trans.change).toFixed(2) : ''}</td>
-                                <td>${trans.paid == "" ? "" : trans.payment_type == 0 ? "Cash" : 'Card'}</td>
+                                <td>${trans.paid == "" ? "" : paymentTypeLabel(trans.payment_type)}</td>
                                 <td>${trans.till}</td>
                                 <td>${trans.user}</td>
                                 <td>${trans.paid == "" ? '<button class="btn btn-dark"><i class="fa fa-search-plus"></i></button>' : '<button onClick="$(this).viewTransaction(' + index + ')" class="btn btn-info"><i class="fa fa-search-plus"></i></button></td>'}</tr>
@@ -2111,8 +2238,8 @@ function loadTransactions() {
 
                 if (counter == transactions.length) {
 
-                    $('#total_sales #counter').text(settings.symbol + parseFloat(sales).toFixed(2));
-                    $('#total_transactions #counter').text(transact);
+                    $('#total_sales .stat-value').text(settings.symbol + parseFloat(sales).toFixed(2));
+                    $('#total_transactions .stat-value').text(transact);
 
                     const result = {};
 
@@ -2141,13 +2268,14 @@ function loadTransactions() {
                         });
                     }
 
-                    loadSoldProducts();
+                    renderTxCharts();
 
 
-                    if (by_user == 0 && by_till == 0) {
+                    if (by_user == 0 && by_till == 0 && by_method == "") {
 
                         userFilter(users);
                         tillFilter(tills);
+                        paymentFilter(methods);
                     }
 
 
@@ -2167,6 +2295,13 @@ function loadTransactions() {
             });
         }
         else {
+            if ($.fn.DataTable.isDataTable('#transactionList')) {
+                $('#transactionList').DataTable().destroy();
+            }
+            $('#transaction_list').empty();
+            $('#total_sales .stat-value, #total_transactions .stat-value, #total_items .stat-value, #total_products .stat-value').text('0');
+            $('#chart_payments, #chart_products').html('<p class="tx-empty">No data for this selection</p>');
+
             Swal.fire(
                 'No data!',
                 'No transactions available within the selected criteria',
@@ -2189,40 +2324,86 @@ function discend(a, b) {
 }
 
 
-function loadSoldProducts() {
+// Simple horizontal bar chart as inline SVG - no external chart library, so
+// it keeps working offline. rows = [{ label, value }]; symbol/decimals format
+// the value shown at the end of each bar.
+function hbarSvg(rows, symbol, decimals) {
 
+    let max = 0;
+    rows.forEach(row => {
+        if (row.value > max) max = row.value;
+    });
+    if (max <= 0) max = 1;
+
+    const barH = 18;
+    const gap = 14;
+    const w = 560;
+    const labelW = 150;
+    const valueW = 110;
+    const barW = w - labelW - valueW;
+    const h = rows.length * (barH + gap);
+    let bars = '';
+
+    rows.forEach((row, i) => {
+
+        let y = i * (barH + gap);
+        let width = Math.max(3, Math.round((row.value / max) * barW));
+        let label = String(row.label);
+        if (label.length > 24) label = label.slice(0, 23) + '...';
+        let value = symbol + Number(row.value).toFixed(decimals);
+        // Keep SVG text well-formed: escape the XML special characters.
+        label = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        bars += `<text x="${labelW - 8}" y="${y + barH - 5}" text-anchor="end" class="bar-label">${label}</text>` +
+                `<rect x="${labelW}" y="${y}" width="${width}" height="${barH}" rx="3" fill="#26a69a"></rect>` +
+                `<text x="${labelW + width + 8}" y="${y + barH - 5}" class="bar-value">${value}</text>`;
+    });
+
+    return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" preserveAspectRatio="xMinYMin meet">${bars}</svg>`;
+}
+
+
+// Rebuilds the transaction-page stats, the payment-method/product charts and
+// the items/products counters from the filtered result set.
+function renderTxCharts() {
+
+    // --- Sales by payment method ---
+    let byMethod = {};
+    allTransactions.forEach(trans => {
+        let label = paymentTypeLabel(trans.payment_type);
+        if (label === '') label = 'Other';
+        byMethod[label] = (byMethod[label] || 0) + (parseFloat(trans.total) || 0);
+    });
+
+    let methodRows = Object.keys(byMethod)
+        .sort((a, b) => byMethod[b] - byMethod[a])
+        .map(key => ({ label: key, value: byMethod[key] }));
+
+    if (methodRows.length > 0) {
+        $('#chart_payments').html(hbarSvg(methodRows, settings.symbol, 2));
+    } else {
+        $('#chart_payments').html('<p class="tx-empty">No payment data for this selection</p>');
+    }
+
+    // --- Top products by units sold ---
     sold.sort(discend);
 
-    let counter = 0;
-    let sold_list = '';
     let items = 0;
     let products = 0;
-    $('#product_sales').empty();
-
-    sold.forEach((item, index) => {
-
+    sold.forEach(item => {
         items += item.qty;
         products++;
-
-        let product = allProducts.filter(function (selected) {
-            return selected._id == item.id;
-        });
-
-        counter++;
-
-        sold_list += `<tr>
-            <td>${item.product}</td>
-            <td>${item.qty}</td>
-            <td>${product[0].stock == 1 ? product.length > 0 ? product[0].quantity : '' : 'N/A'}</td>
-            <td>${settings.symbol + (item.qty * parseFloat(item.price)).toFixed(2)}</td>
-            </tr>`;
-
-        if (counter == sold.length) {
-            $('#total_items #counter').text(items);
-            $('#total_products #counter').text(products);
-            $('#product_sales').html(sold_list);
-        }
     });
+    $('#total_items .stat-value').text(items);
+    $('#total_products .stat-value').text(products);
+
+    let top = sold.slice(0, 7).map(item => ({ label: item.product, value: item.qty }));
+
+    if (top.length > 0) {
+        $('#chart_products').html(hbarSvg(top, '', 0));
+    } else {
+        $('#chart_products').html('<p class="tx-empty">No product data for this selection</p>');
+    }
 }
 
 
@@ -2253,6 +2434,17 @@ function tillFilter(tills) {
 }
 
 
+function paymentFilter(methods) {
+
+    $('#pay_methods').empty();
+    $('#pay_methods').append(`<option value="">All</option>`);
+    methods.forEach(method => {
+        $('#pay_methods').append(`<option value="${method}">${method}</option>`);
+    });
+
+}
+
+
 $.fn.viewTransaction = function (index) {
 
     transaction_index = index;
@@ -2272,14 +2464,7 @@ $.fn.viewTransaction = function (index) {
     });
 
 
-    switch (allTransactions[index].payment_type) {
-
-        case 2: type = "Card";
-            break;
-
-        default: type = "Cash";
-
-    }
+    type = paymentTypeLabel(allTransactions[index].payment_type);
 
 
     if (allTransactions[index].paid != "") {
@@ -2334,6 +2519,7 @@ $.fn.viewTransaction = function (index) {
         paid: allTransactions[index].paid,
         change: allTransactions[index].change,
         paymentType: type,
+        paymentInfo: allTransactions[index].payment_info,
         barcode: orderNumber
     });
 
@@ -2354,6 +2540,12 @@ $('#status').change(function () {
 
 $('#tills').change(function () {
     by_till = $(this).find('option:selected').val();
+    loadTransactions();
+});
+
+
+$('#pay_methods').change(function () {
+    by_method = $(this).val();
     loadTransactions();
 });
 
